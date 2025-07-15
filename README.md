@@ -114,6 +114,53 @@ curl -X POST http://localhost:5000/demo/test-individual-apis
 
 ## Saga 実行フロー
 
+### オーケストレーター動作フロー
+
+```mermaid
+graph TD
+    A[Saga実行開始] --> B[トランザクション作成]
+    B --> C[データベースに初期状態保存]
+    C --> D[ステータス: IN_PROGRESS]
+    D --> E[ステップ1: Event Registration]
+    
+    E --> F{ステップ1成功?}
+    F -->|Yes| G[結果をDBに保存]
+    F -->|No| P[ロールバック開始]
+    
+    G --> H[ステップ2: Event Details Registration]
+    H --> I{ステップ2成功?}
+    I -->|Yes| J[結果をDBに保存]
+    I -->|No| P
+    
+    J --> K[ステップ3: Venue Registration]
+    K --> L{ステップ3成功?}
+    L -->|Yes| M[結果をDBに保存]
+    L -->|No| P
+    
+    M --> N[ステップ4: Ticket Registration]
+    N --> O{ステップ4成功?}
+    O -->|Yes| Q[全ステップ完了]
+    O -->|No| P
+    
+    Q --> R[ステータス: COMPLETED]
+    R --> S[成功レスポンス返却]
+    
+    P --> T[ステータス: COMPENSATING]
+    T --> U[完了済みステップを逆順で実行]
+    U --> V[Ticket API Rollback]
+    V --> W[Venue API Rollback]
+    W --> X[Event Details API Rollback]
+    X --> Y[Event API Rollback]
+    Y --> Z[ステータス: COMPENSATED]
+    Z --> AA[失敗レスポンス返却]
+    
+    style A fill:#e1f5fe
+    style S fill:#c8e6c9
+    style AA fill:#ffcdd2
+    style P fill:#fff3e0
+    style T fill:#fff3e0
+```
+
 ### 正常フロー
 
 1. **Event Registration** → Event ID 取得
@@ -131,6 +178,44 @@ curl -X POST http://localhost:5000/demo/test-individual-apis
    - Event Details API rollback (DELETE /api/event-details/rollback/{details_id})
    - Event API rollback (DELETE /api/event/rollback/{event_id})
 4. **Saga 状態を "COMPENSATED" に変更**
+
+### データベース状態管理
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Orchestrator
+    participant Database
+    participant API1 as Event API
+    participant API2 as Event Details API
+    participant API3 as Venue API
+    participant API4 as Ticket API
+
+    Client->>Orchestrator: POST /api/saga/execute
+    Orchestrator->>Database: トランザクション作成 (PENDING)
+    Orchestrator->>Database: ステータス更新 (IN_PROGRESS)
+    
+    Orchestrator->>API1: POST /api/event/register
+    API1-->>Orchestrator: Event ID
+    Orchestrator->>Database: ステップ1完了状態を保存
+    
+    Orchestrator->>API2: POST /api/event-details/register
+    API2-->>Orchestrator: Details ID
+    Orchestrator->>Database: ステップ2完了状態を保存
+    
+    Orchestrator->>API3: POST /api/venue/register
+    API3-->>Orchestrator: Venue ID
+    Orchestrator->>Database: ステップ3完了状態を保存
+    
+    Orchestrator->>API4: POST /api/ticket/register
+    API4-->>Orchestrator: Ticket ID
+    Orchestrator->>Database: ステップ4完了状態を保存
+    
+    Orchestrator->>Database: 最終ステータス更新 (COMPLETED)
+    Orchestrator-->>Client: 成功レスポンス
+
+    Note over Orchestrator,Database: 各ステップ完了時にリアルタイムでDB更新
+```
 
 ## API 仕様
 
