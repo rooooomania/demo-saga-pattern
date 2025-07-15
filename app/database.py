@@ -141,14 +141,16 @@ class SharedDatabase:
     # Transaction management for Saga
     def create_transaction(self, transaction_data: Dict[str, Any]) -> str:
         with self.lock:
-            transaction_id = str(uuid.uuid4())
+            transaction_id = transaction_data.get('id', str(uuid.uuid4()))
             self.transactions[transaction_id] = {
                 'id': transaction_id,
                 'status': transaction_data.get('status', 'pending'),
                 'steps': transaction_data.get('steps', []),
-                'created_at': datetime.now().isoformat(),
-                'updated_at': datetime.now().isoformat(),
-                'metadata': transaction_data.get('metadata', {})
+                'current_step_index': transaction_data.get('current_step_index', 0),
+                'created_at': transaction_data.get('created_at', datetime.now().isoformat()),
+                'updated_at': transaction_data.get('updated_at', datetime.now().isoformat()),
+                'metadata': transaction_data.get('metadata', {}),
+                'error': transaction_data.get('error')
             }
             return transaction_id
     

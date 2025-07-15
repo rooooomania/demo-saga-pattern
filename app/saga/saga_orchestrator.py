@@ -38,8 +38,11 @@ class SagaOrchestrator:
         db.create_transaction({
             'id': saga_transaction.transaction_id,
             'status': saga_transaction.status.value,
-            'steps': [step.name for step in saga_transaction.steps],
-            'metadata': saga_transaction.metadata
+            'steps': saga_transaction.to_dict()['steps'],
+            'metadata': saga_transaction.metadata,
+            'current_step_index': saga_transaction.current_step_index,
+            'created_at': saga_transaction.created_at,
+            'updated_at': saga_transaction.updated_at
         })
         
         saga_transaction.status = SagaTransactionStatus.IN_PROGRESS
@@ -54,6 +57,13 @@ class SagaOrchestrator:
                 
                 success = self._execute_step(step, saga_transaction)
                 
+                # ステップ実行後にデータベースを更新
+                db.update_transaction(saga_transaction.transaction_id, {
+                    'steps': saga_transaction.to_dict()['steps'],
+                    'current_step_index': saga_transaction.current_step_index,
+                    'updated_at': datetime.now().isoformat()
+                })
+                
                 if not success:
                     logger.error(f"Step {step.name} failed. Starting rollback...")
                     
@@ -66,7 +76,9 @@ class SagaOrchestrator:
                     # データベース更新
                     db.update_transaction(saga_transaction.transaction_id, {
                         'status': saga_transaction.status.value,
-                        'steps': saga_transaction.to_dict()['steps']
+                        'steps': saga_transaction.to_dict()['steps'],
+                        'current_step_index': saga_transaction.current_step_index,
+                        'updated_at': saga_transaction.updated_at
                     })
                     
                     return {
@@ -85,7 +97,9 @@ class SagaOrchestrator:
             # データベース更新
             db.update_transaction(saga_transaction.transaction_id, {
                 'status': saga_transaction.status.value,
-                'steps': saga_transaction.to_dict()['steps']
+                'steps': saga_transaction.to_dict()['steps'],
+                'current_step_index': saga_transaction.current_step_index,
+                'updated_at': saga_transaction.updated_at
             })
             
             logger.info(f"Saga completed successfully: {saga_transaction.transaction_id}")
@@ -105,6 +119,9 @@ class SagaOrchestrator:
             # データベース更新
             db.update_transaction(saga_transaction.transaction_id, {
                 'status': saga_transaction.status.value,
+                'steps': saga_transaction.to_dict()['steps'],
+                'current_step_index': saga_transaction.current_step_index,
+                'updated_at': datetime.now().isoformat(),
                 'error': str(e)
             })
             
